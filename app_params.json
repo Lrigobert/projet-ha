@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-07b14dfe84c8b28b4"
+  },
+  {
+    "ParameterKey": "PublicSubnetIds",
+    "ParameterValue": "subnet-09dc8cb7be9f30e95,subnet-0f32a5487f428d76d"
+  },
+  {
+    "ParameterKey": "AppSubnetIds",
+    "ParameterValue": "subnet-068c13aaac6586d03,subnet-088f1d581d3f44fe0"
+  },
+  {
+    "ParameterKey": "InstanceProfileName",
+    "ParameterValue": "ProjetHA-InstanceProfile"
+  }
+]

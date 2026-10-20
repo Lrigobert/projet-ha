@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Phase 2 - Couche Application (ALB & ASG)'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  AppSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  InstanceProfileName:
+    Type: String
+  AmiId:
+    Type: String
+    Default: "ami-03413ad17eef56854" # Amazon Linux 2023 eu-north-1
+
+Resources:
+  # 1. Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Acces HTTP public pour l'ALB"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Acces depuis l'ALB et SSH"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # A restreindre
+
+  # 2. Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "projet-ha-alb"
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups: [ !Ref ALBSecurityGroup ]
+      Type: application
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: "projet-ha-tg"
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: "200-399"
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # 3. Launch Template
+  AppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: "projet-ha-app-lt"
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: t3.micro
+        KeyName: "tp-ec2-key"
+        IamInstanceProfile:
+          Name: !Ref InstanceProfileName
+        SecurityGroupIds: [ !Ref AppSecurityGroup ]
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            dnf update -y
+            dnf install -y docker
+            systemctl start docker
+            systemctl enable docker
+            
+            # Recuperation du endpoint RDS (via stack export ou parametre)
+            # Ici on utilise une valeur statique pour l'exemple, mais a dynamiser en prod
+            RDS_HOST="odoo-postgresql-ha.cnei2m2ierfw.eu-north-1.rds.amazonaws.com"
+            
+            docker run -d --name odoo \
+              -p 80:8069 \
+              -e HOST=$RDS_HOST \
+              -e USER=odoo \
+              -e PASSWORD=Odoo123HA! \
+              --restart always \
+              odoo:17.0
+
+  # 4. Auto Scaling Group
+  AppASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: "projet-ha-asg"
+      VPCZoneIdentifier: !Ref AppSubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      TargetGroupARNs: [ !Ref ALBTargetGroup ]
+
+  # 5. Scaling Policy (Target Tracking)
+  AppScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AppASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 50.0
+
+Outputs:
+  ALBDnsName:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  AppSGId:
+    Value: !Ref AppSecurityGroup

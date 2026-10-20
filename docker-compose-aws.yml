@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  odoo:
+    image: odoo:17.0
+    container_name: odoo-app
+    ports:
+      - "80:8069"
+    environment:
+      - HOST=odoo-postgresql-ha.cnei2m2ierfw.eu-north-1.rds.amazonaws.com
+      - USER=odoo
+      - PASSWORD=Odoo123HA!
+    restart: always

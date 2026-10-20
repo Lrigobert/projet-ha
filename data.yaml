@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Phase 1 - Couche Donnees (RDS & ElastiCache)'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  KmsKeyArn:
+    Type: String
+
+Resources:
+  # 1. Security Groups
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Acces au port 5432 pour RDS PostgreSQL"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: "sg-05cc6d01a5b54e0ed" # SG-App existant
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Acces au port 6379 pour Redis"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: 10.0.0.0/16
+
+  # 2. Subnet Groups
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group pour RDS"
+      SubnetIds: !Ref PrivateSubnetIds
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: "Subnet group pour Redis"
+      SubnetIds: !Ref PrivateSubnetIds
+
+  # 3. RDS Multi-AZ Instance (PostgreSQL pour Odoo)
+  AppDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: "projet-ha-postgresql"
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: "15.7"
+      AllocatedStorage: 20
+      MultiAZ: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups: [ !Ref RDSSecurityGroup ]
+      StorageEncrypted: true
+      KmsKeyId: !Ref KmsKeyArn
+      MasterUsername: "odoo"
+      MasterUserPassword: "Odoo123HA!Password" # Idéalement via Secrets Manager dynamic reference
+      BackupRetentionPeriod: 1
+      PubliclyAccessible: false
+
+  # 4. ElastiCache Cluster
+  AppCache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: "projet-ha-redis"
+      Engine: redis
+      CacheNodeType: cache.t3.micro
+      NumCacheNodes: 1
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      VpcSecurityGroupIds: [ !Ref RedisSecurityGroup ]
+
+Outputs:
+  RDSEndpoint:
+    Value: !GetAtt AppDatabase.Endpoint.Address
+  RedisEndpoint:
+    Value: !GetAtt AppCache.RedisEndpoint.Address

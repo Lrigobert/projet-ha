@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-07b14dfe84c8b28b4"
+  },
+  {
+    "ParameterKey": "PrivateSubnetIds",
+    "ParameterValue": "subnet-068c13aaac6586d03,subnet-088f1d581d3f44fe0"
+  },
+  {
+    "ParameterKey": "KmsKeyArn",
+    "ParameterValue": "arn:aws:kms:eu-north-1:299332718986:key/194199b9-f902-45b2-b146-b0eb240cf243"
+  }
+]

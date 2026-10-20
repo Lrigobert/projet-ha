@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Phase 1 - Fondations Securite et IAM'
+
+Resources:
+  # 1. KMS Key pour le chiffrement des donnees
+  AppKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "Cle KMS pour le projet HA"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: kms:*
+            Resource: '*'
+
+  AppKMSAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/projet-ha-key
+      TargetKeyId: !Ref AppKMSKey
+
+  # 2. Secrets Manager pour les identifiants DB
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: "ProjetHA/DBSecret"
+      Description: "Identifiants pour RDS MySQL"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+      KmsKeyId: !Ref AppKMSKey
+
+  # 3. IAM Role pour les instances EC2 (Tier App)
+  EC2AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "ProjetHA-EC2-App-Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: AccessSecretsAndKMS
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DBSecret
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !GetAtt AppKMSKey.Arn
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: "ProjetHA-InstanceProfile"
+      Roles:
+        - !Ref EC2AppRole
+
+Outputs:
+  KmsKeyArn:
+    Value: !GetAtt AppKMSKey.Arn
+    Export: { Name: ProjetHA-KmsKeyArn }
+  DBSecretArn:
+    Value: !Ref DBSecret
+    Export: { Name: ProjetHA-DBSecretArn }
+  InstanceProfileName:
+    Value: !Ref EC2InstanceProfile
+    Export: { Name: ProjetHA-InstanceProfile }

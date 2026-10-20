@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Phase 3 - Couche Front-End (CloudFront & S3)'
+
+Parameters:
+  ALBDnsName:
+    Type: String
+
+Resources:
+  # 1. S3 Bucket pour les assets statiques
+  StaticAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "projet-ha-assets-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # 2. CloudFront Origin Access Control (OAC)
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties: 
+      OriginAccessControlConfig: 
+          Description: "Accès S3 via CloudFront"
+          Name: "projet-ha-oac"
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+  # 3. CloudFront Distribution
+  AppDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Origins:
+          - Id: ALBOrigin
+            DomainName: !Ref ALBDnsName
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+          - Id: S3Origin
+            DomainName: !GetAtt StaticAssetsBucket.RegionalDomainName
+            OriginAccessControlId: !Ref CloudFrontOAC
+        DefaultCacheBehavior:
+          TargetOriginId: ALBOrigin
+          ViewerProtocolPolicy: allow-all # HTTPS recommandé en prod
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+        CacheBehaviors:
+          - PathPattern: "/static/*"
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: allow-all
+            ForwardedValues:
+              QueryString: false
+
+Outputs:
+  CloudFrontDomainName:
+    Value: !GetAtt AppDistribution.DomainName
+  S3BucketName:
+    Value: !Ref StaticAssetsBucket

@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  pritunl:
+    image: pritunl/pritunl:latest
+    container_name: pritunl
+    network_mode: host
+    privileged: true
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/pritunl
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:6.0
+    container_name: pritunl-mongo
+    volumes:
+      - pritunl-data:/data/db
+
+volumes:
+  pritunl-data:
